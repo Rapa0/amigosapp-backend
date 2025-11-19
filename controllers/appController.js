@@ -4,7 +4,7 @@ const Message = require('../models/Message');
 exports.obtenerCandidatos = async (req, res) => {
     try {
         const usuarioActual = await User.findById(req.usuario._id);
-
+        
         const excluidos = [
             req.usuario._id, 
             ...(usuarioActual.matches || []), 
@@ -21,8 +21,7 @@ exports.obtenerCandidatos = async (req, res) => {
         const candidatos = await User.find(filtro).limit(20);
         res.json(candidatos);
     } catch (error) {
-        console.log(error);
-        res.status(500).send('Error obteniendo candidatos');
+        res.status(500).send('Error');
     }
 };
 
@@ -44,7 +43,6 @@ exports.darLike = async (req, res) => {
 
         res.json({ msg: 'Like registrado', match: isMatch });
     } catch (error) {
-        console.log(error);
         res.status(500).send('Error');
     }
 };
@@ -81,12 +79,24 @@ exports.superLike = async (req, res) => {
 
 exports.obtenerSolicitudes = async (req, res) => {
     try {
-        const solicitudes = await User.find({
-            likes: req.usuario._id,        
+        const usuarios = await User.find({
+            likes: req.usuario._id,
             matches: { $ne: req.usuario._id } 
-        }).select('nombre email imagen edad descripcion galeria');
+        }).select('nombre email imagen edad descripcion galeria').lean();
 
-        res.json(solicitudes);
+        const solicitudesCompletas = await Promise.all(usuarios.map(async (usuario) => {
+            const mensaje = await Message.findOne({
+                remitente: usuario._id,
+                receptor: req.usuario._id
+            }).sort({ createdAt: 1 });
+
+            return {
+                ...usuario,
+                mensajeInicial: mensaje ? mensaje.mensaje : null
+            };
+        }));
+
+        res.json(solicitudesCompletas);
     } catch (error) {
         res.status(500).send('Error');
     }
@@ -104,37 +114,25 @@ exports.gestionarSolicitud = async (req, res) => {
 
         } else if (accion === 'rechazar') {
             await User.findByIdAndUpdate(idCandidato, { $pull: { likes: myId } });
-
             await User.findByIdAndUpdate(myId, { $addToSet: { dislikes: idCandidato } });
-            
             return res.json({ msg: 'Solicitud Rechazada' });
         }
     } catch (error) {
-        console.log(error);
-        res.status(500).send('Error gestionando solicitud');
+        res.status(500).send('Error');
     }
 };
 
 exports.eliminarMatch = async (req, res) => {
-    const { idUsuario } = req.body; 
+    const { idUsuario } = req.body;
     const myId = req.usuario._id;
 
     try {
-
         await User.findByIdAndUpdate(myId, { 
-            $pull: { 
-                matches: idUsuario, 
-                likes: idUsuario, 
-                dislikes: idUsuario 
-            } 
+            $pull: { matches: idUsuario, likes: idUsuario, dislikes: idUsuario } 
         });
 
         await User.findByIdAndUpdate(idUsuario, { 
-            $pull: { 
-                matches: myId, 
-                likes: myId, 
-                dislikes: myId 
-            } 
+            $pull: { matches: myId, likes: myId, dislikes: myId } 
         });
 
         await Message.deleteMany({
@@ -146,30 +144,30 @@ exports.eliminarMatch = async (req, res) => {
 
         res.json({ msg: 'Match eliminado y reseteado completamente' });
     } catch (error) {
-        console.log(error);
-        res.status(500).send('Error eliminando match');
+        res.status(500).send('Error');
     }
 };
 
 exports.reiniciarBusqueda = async (req, res) => {
     try {
-        
         await User.findByIdAndUpdate(req.usuario._id, { 
             $set: { dislikes: [] } 
         });
-        
         res.json({ msg: 'Historial de rechazos borrado' });
     } catch (error) {
-        console.log(error);
-        res.status(500).send('Error al reiniciar');
+        res.status(500).send('Error');
     }
 };
 
 exports.obtenerMatches = async (req, res) => {
     try {
-        const usuario = await User.findById(req.usuario._id).populate('matches', 'nombre email imagen'); 
+        const usuario = await User.findById(req.usuario._id)
+            .populate('matches', 'nombre email imagen'); 
+        
         res.json(usuario.matches);
-    } catch (error) { res.status(500).send('Error'); }
+    } catch (error) {
+        res.status(500).send('Error');
+    }
 };
 
 exports.obtenerMensajes = async (req, res) => {
@@ -180,6 +178,9 @@ exports.obtenerMensajes = async (req, res) => {
                 { remitente: req.params.idReceptor, receptor: req.usuario._id }
             ]
         }).sort({ createdAt: 1 });
+
         res.json(mensajes);
-    } catch (error) { res.status(500).send('Error'); }
+    } catch (error) {
+        res.status(500).send('Error');
+    }
 };
