@@ -33,10 +33,9 @@ exports.registrar = async (req, res) => {
             return res.status(400).json({ msg: 'El usuario ya existe' });
         }
 
-        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
-        
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
+        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
 
         if (usuario && !usuario.cuentaConfirmada) {
             usuario.nombre = nombre;
@@ -56,28 +55,25 @@ exports.registrar = async (req, res) => {
 
         await usuario.save();
 
-        console.log(`>> CÓDIGO GENERADO para ${email}: ${codigo}`);
+        console.log(`CÓDIGO GENERADO para ${email}: ${codigo}`);
 
         if (transporter) {
             await transporter.sendMail({
                 to: email,
                 from: process.env.EMAIL_SENDER,
-                subject: 'Código de Verificación - AmigosApp',
+                subject: 'Verifica tu cuenta - AmigosApp',
                 html: `
-                    <div style="font-family: Arial, sans-serif; text-align: center;">
-                        <h2>¡Hola ${nombre}!</h2>
-                        <p>Usa este código para completar tu registro:</p>
-                        <h1 style="color: #6C63FF; letter-spacing: 5px;">${codigo}</h1>
-                        <p>Si no solicitaste esto, ignora este correo.</p>
-                    </div>
+                    <h1>¡Bienvenido, ${nombre}!</h1>
+                    <p>Tu código de verificación es:</p>
+                    <h2 style="color: #6C63FF;">${codigo}</h2>
                 `
             });
         }
 
-        res.json({ msg: 'Código enviado correctamente' });
+        res.json({ msg: 'Código enviado. Verifica tu correo.' });
     } catch (error) {
         console.log(error);
-        res.status(500).send('Hubo un error en el servidor');
+        res.status(500).send('Hubo un error al registrar');
     }
 };
 
@@ -88,7 +84,7 @@ exports.verificarCuenta = async (req, res) => {
         const usuario = await User.findOne({ email });
         
         if (!usuario) {
-            return res.status(400).json({ msg: 'Usuario no encontrado' });
+            return res.status(400).json({ msg: 'Credenciales inválidas' });
         }
 
         const codigoUsuario = String(codigo).trim();
@@ -107,7 +103,7 @@ exports.verificarCuenta = async (req, res) => {
         res.json({ msg: 'Cuenta verificada exitosamente' });
     } catch (error) {
         console.log(error);
-        res.status(500).send('Error al verificar código');
+        res.status(500).send('Error al verificar');
     }
 };
 
@@ -115,8 +111,11 @@ exports.login = async (req, res) => {
     const { email, password } = req.body;
     try {
         let usuario = await User.findOne({ email });
+        if (!usuario) {
+            return res.status(400).json({ msg: 'Credenciales inválidas' });
+        }
 
-        if (!usuario || !usuario.cuentaConfirmada) {
+        if (!usuario.cuentaConfirmada) {
             return res.status(400).json({ msg: 'Credenciales inválidas' });
         }
 
@@ -143,11 +142,12 @@ exports.login = async (req, res) => {
         res.status(500).send('Hubo un error');
     }
 };
+
 exports.olvidePassword = async (req, res) => {
     const { email } = req.body;
     try {
         const usuario = await User.findOne({ email });
-        const mensajeFeedback = 'Si el correo existe, recibirás un código';
+        const mensajeFeedback = 'Si existe el correo estará en tu bandeja de spam';
 
         if (!usuario) return res.json({ msg: mensajeFeedback });
 
@@ -159,19 +159,20 @@ exports.olvidePassword = async (req, res) => {
             await transporter.sendMail({
                 to: email,
                 from: process.env.EMAIL_SENDER,
-                subject: 'Recuperar Contraseña',
+                subject: 'Recuperar Contraseña - AmigosApp',
                 html: `<h1>Tu código es: <b>${codigo}</b></h1>`
             });
         }
         res.json({ msg: mensajeFeedback });
 
     } catch (error) {
-        res.status(500).send('Error al enviar');
+        res.status(500).send('Error al enviar correo');
     }
 };
 
 exports.comprobarToken = async (req, res) => {
     const { email, token } = req.body;
+    
     try {
         const usuario = await User.findOne({ email });
         if (!usuario) return res.status(400).json({ msg: 'Usuario no encontrado' });
@@ -187,12 +188,18 @@ exports.comprobarToken = async (req, res) => {
 
 exports.nuevoPassword = async (req, res) => {
     const { email, token, password } = req.body;
-    if(password.length < 6) return res.status(400).json({ msg: 'Mínimo 6 caracteres' });
+
+    if(password.length < 6) {
+        return res.status(400).json({ msg: 'La contraseña debe tener al menos 6 caracteres' });
+    }
 
     try {
         const usuario = await User.findOne({ email });
-        if (!usuario) return res.status(400).json({ msg: 'Error' });
-        if (String(usuario.token).trim() !== String(token).trim()) return res.status(400).json({ msg: 'Token inválido' });
+        if (!usuario) return res.status(400).json({ msg: 'Operación no válida' });
+        
+        if (String(usuario.token).trim() !== String(token).trim()) {
+            return res.status(400).json({ msg: 'Operación no válida' });
+        }
 
         const salt = await bcrypt.genSalt(10);
         usuario.password = await bcrypt.hash(password, salt);
@@ -235,6 +242,7 @@ exports.actualizarPerfil = async (req, res) => {
                 preferencia: usuario.preferencia
             }
         });
+
     } catch (error) {
         res.status(500).send('Error al actualizar');
     }
@@ -243,7 +251,7 @@ exports.actualizarPerfil = async (req, res) => {
 exports.eliminarCuenta = async (req, res) => {
     try {
         await User.findByIdAndDelete(req.usuario._id);
-        res.json({ msg: 'Cuenta eliminada' });
+        res.json({ msg: 'Cuenta eliminada correctamente' });
     } catch (error) {
         res.status(500).send('Error al eliminar');
     }
