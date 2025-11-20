@@ -16,6 +16,7 @@ const userSchema = mongoose.Schema({
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     dislikes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     matches: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    cuentaConfirmada: { type: Boolean, default: false },
 }, {
     timestamps: true,
 });
