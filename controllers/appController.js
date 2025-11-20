@@ -29,8 +29,14 @@ exports.darLike = async (req, res) => {
     try {
         const { idCandidato } = req.body;
         const myId = req.usuario._id;
+        const usuarioActual = await User.findById(myId);
 
-        await User.findByIdAndUpdate(myId, { $addToSet: { likes: idCandidato } });
+        if (!usuarioActual.likes.includes(idCandidato)) {
+            await User.findByIdAndUpdate(myId, { $addToSet: { likes: idCandidato } });
+            if (req.io) {
+                req.io.to(idCandidato).emit('nueva_notificacion', { tipo: 'like' });
+            }
+        }
 
         const candidato = await User.findById(idCandidato);
         let isMatch = false;
@@ -39,6 +45,10 @@ exports.darLike = async (req, res) => {
             isMatch = true;
             await User.findByIdAndUpdate(myId, { $addToSet: { matches: idCandidato } });
             await User.findByIdAndUpdate(idCandidato, { $addToSet: { matches: myId } });
+            
+            if (req.io) {
+                req.io.to(idCandidato).emit('nueva_notificacion', { tipo: 'match' });
+            }
         }
 
         res.json({ msg: 'Like registrado', match: isMatch });
@@ -63,12 +73,20 @@ exports.superLike = async (req, res) => {
             });
         }
 
+        if (req.io) {
+            req.io.to(idCandidato).emit('nueva_notificacion', { tipo: 'superlike' });
+        }
+
         const candidato = await User.findById(idCandidato);
         let isMatch = false;
         if (candidato.likes.includes(myId)) {
             isMatch = true;
             await User.findByIdAndUpdate(myId, { $addToSet: { matches: idCandidato } });
             await User.findByIdAndUpdate(idCandidato, { $addToSet: { matches: myId } });
+
+            if (req.io) {
+                req.io.to(idCandidato).emit('nueva_notificacion', { tipo: 'match' });
+            }
         }
 
         res.json({ msg: 'Super Like enviado', match: isMatch });

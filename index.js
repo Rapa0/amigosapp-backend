@@ -14,6 +14,17 @@ conectarDB();
 app.use(cors());
 app.use(express.json());
 
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
+});
+
+app.use((req, res, next) => {
+    req.io = io;
+    next();
+});
 
 app.get('/', (req, res) => {
     res.send('Servidor Encendido y Listo');
@@ -23,19 +34,11 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/app', require('./routes/appRoutes'));
 app.use('/api/upload', require('./routes/uploadRoutes'));
 
-const io = new Server(server, {
-    cors: {
-        origin: "*", 
-        methods: ["GET", "POST"]
-    }
-});
-
 io.on('connection', (socket) => {
-    console.log('Cliente conectado al socket:', socket.id);
+    console.log('Cliente conectado:', socket.id);
 
     socket.on('entrar_chat', (userId) => {
         socket.join(userId);
-        console.log(`Usuario ${userId} entró a su sala.`);
     });
 
     socket.on('enviar_mensaje', async (data) => {
@@ -46,7 +49,7 @@ io.on('connection', (socket) => {
                 remitente,
                 receptor,
                 mensaje,
-                tipo: tipo || 'texto' 
+                tipo: tipo || 'texto'
             });
             await nuevoMsg.save();
 
@@ -54,7 +57,7 @@ io.on('connection', (socket) => {
             io.to(remitente).emit('nuevo_mensaje', nuevoMsg);
 
         } catch (error) {
-            console.log('Error socket:', error);
+            console.log(error);
         }
     });
 
