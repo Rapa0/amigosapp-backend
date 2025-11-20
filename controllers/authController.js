@@ -35,7 +35,6 @@ exports.registrar = async (req, res) => {
 
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
-
         const codigo = Math.random().toString(36).substring(2, 8).toUpperCase();
 
         if (usuario && !usuario.cuentaConfirmada) {
@@ -55,7 +54,8 @@ exports.registrar = async (req, res) => {
         }
 
         await usuario.save();
-        console.log(`>> REGISTRO: Código generado para ${email}: ${codigo}`);
+
+        console.log(`REGISTRO NUEVO: Email: ${email} - Código Generado: ${codigo}`);
 
         if (transporter) {
             await transporter.sendMail({
@@ -84,20 +84,15 @@ exports.verificarCuenta = async (req, res) => {
         const usuario = await User.findOne({ email });
         
         if (!usuario) {
-            return res.status(400).json({ msg: 'Usuario no encontrado' });
+            return res.status(400).json({ msg: 'Credenciales inválidas' });
         }
 
-        console.log('----------------------------------------');
-        console.log(`INTENTO DE VERIFICACIÓN: ${email}`);
-        console.log(`CODIGO RECIBIDO (APP): ${codigo}`);
-        console.log(`CODIGO ESPERADO (BD):  ${usuario.token}`);
-        console.log('----------------------------------------');
-
         const codigoLimpio = codigo.trim().toUpperCase();
-        const tokenBD = usuario.token ? usuario.token.trim().toUpperCase() : '';
+        
+        console.log(`VERIFICANDO: ${email} | BD: ${usuario.token} | USER: ${codigoLimpio}`);
 
-        if (tokenBD !== codigoLimpio) {
-            return res.status(400).json({ msg: `Código incorrecto. (Tú pusiste: ${codigoLimpio})` });
+        if (usuario.token !== codigoLimpio) {
+            return res.status(400).json({ msg: 'Código incorrecto' });
         }
 
         usuario.token = null;
@@ -115,12 +110,13 @@ exports.login = async (req, res) => {
     const { email, password } = req.body;
     try {
         let usuario = await User.findOne({ email });
+        
         if (!usuario) {
             return res.status(400).json({ msg: 'Credenciales inválidas' });
         }
 
         if (!usuario.cuentaConfirmada) {
-            return res.status(400).json({ msg: 'Debes verificar tu cuenta primero' });
+            return res.status(400).json({ msg: 'Credenciales inválidas' });
         }
 
         const passCorrecto = await bcrypt.compare(password, usuario.password);
