@@ -73,11 +73,10 @@ exports.verificarCuenta = async (req, res) => {
             return res.status(400).json({ msg: 'Usuario no encontrado' });
         }
 
-        const codigoBD = String(usuario.token).trim();
-        
-        const codigoUser = String(codigo).replace(/\s/g, '').trim();
+        const codigoBD = String(usuario.token || '').trim();
+        const codigoUser = String(codigo || '').replace(/\s/g, '').trim();
 
-        console.log(`COMPARANDO: BD[${codigoBD}] vs USER[${codigoUser}]`);
+        console.log(`DEBUG REALIDAD -> BD: ${JSON.stringify(codigoBD)} vs USER: ${JSON.stringify(codigoUser)}`);
 
         if (codigoBD !== codigoUser) {
             return res.status(400).json({ msg: `Incorrecto. BD: ${codigoBD} / Tú: ${codigoUser}` });
