@@ -180,7 +180,7 @@ exports.reiniciarBusqueda = async (req, res) => {
 exports.obtenerMatches = async (req, res) => {
     try {
         const usuario = await User.findById(req.usuario._id)
-            .populate('matches', 'nombre email imagen'); 
+            .populate('matches', 'nombre email imagen galeria edad descripcion genero'); 
         
         res.json(usuario.matches);
     } catch (error) {
