@@ -16,31 +16,29 @@ const generarJWT = (id) => {
 };
 
 exports.registrar = async (req, res) => {
+    const { password, nombre, imagen } = req.body;
+    const email = req.body.email.trim().toLowerCase();
+
+    if (password.length < 6) return res.status(400).json({ msg: 'La contraseña debe tener al menos 6 caracteres' });
+    if (!imagen) return res.status(400).json({ msg: 'La foto de perfil es obligatoria' });
+
     try {
-        const { password, nombre, imagen } = req.body;
-        const email = req.body.email ? req.body.email.toLowerCase().trim() : '';
-
-        if (password.length < 6) return res.status(400).json({ msg: 'La contraseña debe tener al menos 6 caracteres' });
-        if (!imagen) return res.status(400).json({ msg: 'La foto de perfil es obligatoria' });
-
         let usuario = await User.findOne({ email });
 
         if (usuario && usuario.cuentaConfirmada) {
-            return res.status(400).json({ msg: 'Este correo ya está registrado' });
+            return res.status(400).json({ msg: 'El usuario ya existe' });
         }
 
-        const codigo = Math.floor(100000 + Math.random() * 900000).toString(); 
+        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
-
 
         if (usuario && !usuario.cuentaConfirmada) {
             usuario.nombre = nombre;
             usuario.password = hashedPassword;
             usuario.imagen = imagen;
-            usuario.token = codigo; 
-        } 
-        else {
+            usuario.token = codigo;
+        } else {
             usuario = new User({
                 nombre,
                 email,
@@ -53,48 +51,38 @@ exports.registrar = async (req, res) => {
 
         await usuario.save();
 
-        console.log(`>> NUEVO CÓDIGO para ${email}: [${codigo}]`);
+        console.log(`>> CODIGO BD (${email}): ${codigo}`);
 
         if (transporter) {
             await transporter.sendMail({
                 to: email,
                 from: process.env.EMAIL_SENDER,
-                subject: 'Código de Verificación',
-                html: `
-                    <div style="text-align: center; font-family: sans-serif;">
-                        <h2>Hola ${nombre}, verifica tu cuenta</h2>
-                        <p>Tu código es:</p>
-                        <h1 style="color: #6C63FF; font-size: 32px; letter-spacing: 5px;">${codigo}</h1>
-                    </div>
-                `
+                subject: 'Tu Código de Verificación',
+                html: `<h1 style="color:#6C63FF">${codigo}</h1>`
             });
         }
 
-        res.json({ msg: 'Código enviado exitosamente' });
+        res.json({ msg: 'Código enviado' });
 
     } catch (error) {
         console.log(error);
-        res.status(500).send('Error en el servidor al registrar');
+        res.status(500).send('Error en registro');
     }
 };
 
 exports.verificarCuenta = async (req, res) => {
-    try {
-        const { codigo } = req.body;
-        const email = req.body.email ? req.body.email.toLowerCase().trim() : '';
+    const { codigo } = req.body;
+    const email = req.body.email.trim().toLowerCase();
 
+    try {
         const usuario = await User.findOne({ email });
 
         if (!usuario) {
             return res.status(400).json({ msg: 'Usuario no encontrado' });
         }
 
-        const codigoBD = String(usuario.token).trim();
-        const codigoUser = String(codigo).trim();
-
-        console.log(`COMPARANDO: BD[${codigoBD}] vs USER[${codigoUser}]`);
-
-        if (codigoBD !== codigoUser) {
+        if (String(usuario.token).trim() !== String(codigo).trim()) {
+            console.log(`Error: BD ${usuario.token} vs User ${codigo}`);
             return res.status(400).json({ msg: 'Código incorrecto' });
         }
 
@@ -102,8 +90,7 @@ exports.verificarCuenta = async (req, res) => {
         usuario.cuentaConfirmada = true;
         await usuario.save();
 
-        res.json({ msg: 'Cuenta verificada correctamente' });
-
+        res.json({ msg: 'Cuenta verificada' });
     } catch (error) {
         console.log(error);
         res.status(500).send('Error al verificar');
@@ -111,12 +98,12 @@ exports.verificarCuenta = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
+    const { password } = req.body;
+    const email = req.body.email.trim().toLowerCase();
+
     try {
-        const { password } = req.body;
-        const email = req.body.email ? req.body.email.toLowerCase().trim() : '';
-
-        let usuario = await User.findOne({ email });
-
+        const usuario = await User.findOne({ email });
+        
         if (!usuario || !usuario.cuentaConfirmada) {
             return res.status(400).json({ msg: 'Credenciales inválidas' });
         }
@@ -140,34 +127,36 @@ exports.login = async (req, res) => {
                 preferencia: usuario.preferencia
             }
         });
-
     } catch (error) {
-        res.status(500).send('Hubo un error en login');
+        res.status(500).send('Error');
     }
 };
 
 exports.olvidePassword = async (req, res) => {
-    const email = req.body.email ? req.body.email.toLowerCase().trim() : '';
+    const email = req.body.email.trim().toLowerCase();
     try {
         const usuario = await User.findOne({ email });
-        if (!usuario) return res.json({ msg: 'Enviado' }); 
+        if (!usuario) return res.json({ msg: 'Enviado' });
+
         const codigo = Math.floor(100000 + Math.random() * 900000).toString();
         usuario.token = codigo;
         await usuario.save();
 
-        if (transporter) await transporter.sendMail({
-            to: email,
-            from: process.env.EMAIL_SENDER,
-            subject: 'Recuperar Password',
-            html: `<h1>${codigo}</h1>`
-        });
+        if (transporter) {
+            await transporter.sendMail({
+                to: email,
+                from: process.env.EMAIL_SENDER,
+                subject: 'Recuperar Password',
+                html: `<h1>${codigo}</h1>`
+            });
+        }
         res.json({ msg: 'Enviado' });
     } catch (error) { res.status(500).send('Error'); }
 };
 
 exports.comprobarToken = async (req, res) => {
     const { token } = req.body;
-    const email = req.body.email ? req.body.email.toLowerCase().trim() : '';
+    const email = req.body.email.trim().toLowerCase();
     try {
         const usuario = await User.findOne({ email });
         if (!usuario || String(usuario.token) !== String(token)) return res.status(400).json({ msg: 'Incorrecto' });
@@ -177,8 +166,8 @@ exports.comprobarToken = async (req, res) => {
 
 exports.nuevoPassword = async (req, res) => {
     const { token, password } = req.body;
-    const email = req.body.email ? req.body.email.toLowerCase().trim() : '';
-    
+    const email = req.body.email.trim().toLowerCase();
+
     if(password.length < 6) return res.status(400).json({ msg: 'Mínimo 6 caracteres' });
 
     try {
@@ -189,7 +178,7 @@ exports.nuevoPassword = async (req, res) => {
         usuario.password = await bcrypt.hash(password, salt);
         usuario.token = null;
         await usuario.save();
-        res.json({ msg: 'Password actualizado' });
+        res.json({ msg: 'Password cambiado' });
     } catch (error) { res.status(500).send('Error'); }
 };
 
@@ -197,15 +186,17 @@ exports.actualizarPerfil = async (req, res) => {
     try {
         const u = await User.findById(req.usuario._id);
         if(!u) return res.status(404).json({msg:'No user'});
-        const {nombre,descripcion,edad,genero,preferencia,galeria}=req.body;
-        if(nombre) u.nombre=nombre;
-        if(descripcion) u.descripcion=descripcion;
-        if(edad) u.edad=edad;
-        if(genero) u.genero=genero;
-        if(preferencia) u.preferencia=preferencia;
-        if(galeria) u.galeria=galeria;
+        
+        const {nombre,descripcion,edad,genero,preferencia,galeria} = req.body;
+        if(nombre) u.nombre = nombre;
+        if(descripcion) u.descripcion = descripcion;
+        if(edad) u.edad = edad;
+        if(genero) u.genero = genero;
+        if(preferencia) u.preferencia = preferencia;
+        if(galeria) u.galeria = galeria;
+
         await u.save();
-        res.json({msg:'Ok', usuario:u});
+        res.json({ msg: 'Actualizado', usuario: u });
     } catch (error) { res.status(500).send('Error'); }
 };
 
