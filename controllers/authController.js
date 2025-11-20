@@ -73,13 +73,24 @@ exports.verificarCuenta = async (req, res) => {
             return res.status(400).json({ msg: 'Usuario no encontrado' });
         }
 
-        const codigoBD = String(usuario.token || '').trim();
-        const codigoUser = String(codigo || '').replace(/\s/g, '').trim();
+        const tokenBD = String(usuario.token || '').trim().substring(0, 6);
+        const tokenUser = String(codigo || '').replace(/\s/g, '').trim();
 
-        console.log(`DEBUG REALIDAD -> BD: ${JSON.stringify(codigoBD)} vs USER: ${JSON.stringify(codigoUser)}`);
+        console.log(`DEBUG FINAL: Longitud BD: ${tokenBD.length}, Longitud User: ${tokenUser.length}`);
+        console.log(`COMPARACIÓN FINAL: BD: ${JSON.stringify(tokenBD)} vs USER: ${JSON.stringify(tokenUser)}`);
 
-        if (codigoBD !== codigoUser) {
-            return res.status(400).json({ msg: `Incorrecto. BD: ${codigoBD} / Tú: ${codigoUser}` });
+        if (tokenBD !== tokenUser) {
+            let debugChars = 'Códigos de caracteres (solo si falla):';
+            for (let i = 0; i < Math.max(tokenBD.length, tokenUser.length); i++) {
+                const charBD = tokenBD.charCodeAt(i) || '---';
+                const charUser = tokenUser.charCodeAt(i) || '---';
+                if (charBD !== charUser) {
+                    debugChars += ` Pos ${i}: BD[${charBD}] vs USER[${charUser}] |`;
+                }
+            }
+            console.log(debugChars);
+
+            return res.status(400).json({ msg: `Incorrecto. BD: ${tokenBD} / Tú: ${tokenUser}` });
         }
 
         usuario.token = null;
