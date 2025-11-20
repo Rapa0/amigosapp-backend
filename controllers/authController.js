@@ -85,6 +85,10 @@ exports.verificarCuenta = async (req, res) => {
             return res.status(400).json({ msg: 'Usuario no encontrado' });
         }
 
+        console.log(`Verificando: ${email}`);
+        console.log(`Código en BD: [${usuario.token}]`);
+        console.log(`Código Recibido: [${codigo.trim().toUpperCase()}]`);
+
         if (usuario.token !== codigo.trim().toUpperCase()) {
             return res.status(400).json({ msg: 'Código incorrecto' });
         }
@@ -95,6 +99,7 @@ exports.verificarCuenta = async (req, res) => {
 
         res.json({ msg: 'Cuenta verificada exitosamente' });
     } catch (error) {
+        console.log(error);
         res.status(500).send('Error al verificar');
     }
 };
