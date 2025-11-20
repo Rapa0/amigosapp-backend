@@ -17,76 +17,74 @@ const generarJWT = (id) => {
 
 exports.registrar = async (req, res) => {
     const { password, nombre, imagen } = req.body;
-    const email = req.body.email.trim().toLowerCase();
+    const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
+    
+    if(password.length < 6) {
+        return res.status(400).json({ msg: 'La contraseña debe tener al menos 6 caracteres' });
+    }
 
-    if (password.length < 6) return res.status(400).json({ msg: 'La contraseña debe tener al menos 6 caracteres' });
-    if (!imagen) return res.status(400).json({ msg: 'La foto de perfil es obligatoria' });
+    if(!imagen) {
+        return res.status(400).json({ msg: 'La foto de perfil es obligatoria' });
+    }
 
     try {
-        let usuario = await User.findOne({ email });
-
-        if (usuario && usuario.cuentaConfirmada) {
-            return res.status(400).json({ msg: 'El usuario ya existe' });
-        }
-
         const codigo = Math.floor(100000 + Math.random() * 900000).toString();
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        if (usuario && !usuario.cuentaConfirmada) {
-            usuario.nombre = nombre;
-            usuario.password = hashedPassword;
-            usuario.imagen = imagen;
-            usuario.token = codigo;
-        } else {
-            usuario = new User({
+        const usuarioExistente = await User.findOne({ email });
+
+        if (usuarioExistente && usuarioExistente.cuentaConfirmada) {
+            return res.status(400).json({ msg: 'El usuario ya existe' });
+        }
+
+        await User.findOneAndUpdate(
+            { email: email }, 
+            {
                 nombre,
-                email,
                 password: hashedPassword,
                 imagen,
                 token: codigo,
                 cuentaConfirmada: false
-            });
-        }
-
-        await usuario.save();
-        console.log(`>> CODIGO BD (${email}): ${codigo}`);
+            },
+            { new: true, upsert: true, setDefaultsOnInsert: true }
+        );
 
         if (transporter) {
             await transporter.sendMail({
                 to: email,
                 from: process.env.EMAIL_SENDER,
                 subject: 'Tu Código de Verificación',
-                html: `<h1 style="color:#6C63FF">${codigo}</h1>`
+                html: `<h1>${codigo}</h1><p>Ingresa este código en la App.</p>`
             });
         }
 
         res.json({ msg: 'Código enviado' });
 
     } catch (error) {
-        console.log(error);
         res.status(500).send('Error en registro');
     }
 };
 
 exports.verificarCuenta = async (req, res) => {
     const { codigo } = req.body;
-    const email = req.body.email.trim().toLowerCase();
+    const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
 
     try {
         const usuario = await User.findOne({ email });
-
+        
         if (!usuario) {
             return res.status(400).json({ msg: 'Usuario no encontrado' });
         }
 
+        // --- LLAVE MAESTRA ---
         if (String(codigo).trim() === '123456') {
-            console.log("🔓 Acceso con Llave Maestra");
             usuario.token = null;
             usuario.cuentaConfirmada = true;
             await usuario.save();
-            return res.json({ msg: 'Cuenta verificada (Master)' });
+            return res.json({ msg: 'Cuenta verificada' });
         }
+        // ---------------------
 
         if (String(usuario.token).trim() !== String(codigo).trim()) {
             return res.status(400).json({ msg: 'Código incorrecto' });
@@ -98,26 +96,22 @@ exports.verificarCuenta = async (req, res) => {
 
         res.json({ msg: 'Cuenta verificada' });
     } catch (error) {
-        console.log(error);
         res.status(500).send('Error al verificar');
     }
 };
 
 exports.login = async (req, res) => {
     const { password } = req.body;
-    const email = req.body.email.trim().toLowerCase();
+    const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
 
     try {
-        const usuario = await User.findOne({ email });
+        let usuario = await User.findOne({ email });
         
-        if (!usuario || !usuario.cuentaConfirmada) {
-            return res.status(400).json({ msg: 'Credenciales inválidas' });
-        }
+        if (!usuario) return res.status(400).json({ msg: 'Credenciales inválidas' });
+        if (!usuario.cuentaConfirmada) return res.status(400).json({ msg: 'Credenciales inválidas' });
 
         const passCorrecto = await bcrypt.compare(password, usuario.password);
-        if (!passCorrecto) {
-            return res.status(400).json({ msg: 'Credenciales inválidas' });
-        }
+        if (!passCorrecto) return res.status(400).json({ msg: 'Credenciales inválidas' });
 
         res.json({
             token: generarJWT(usuario._id),
@@ -134,12 +128,12 @@ exports.login = async (req, res) => {
             }
         });
     } catch (error) {
-        res.status(500).send('Error');
+        res.status(500).send('Hubo un error');
     }
 };
 
 exports.olvidePassword = async (req, res) => {
-    const email = req.body.email.trim().toLowerCase();
+    const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
     try {
         const usuario = await User.findOne({ email });
         if (!usuario) return res.json({ msg: 'Enviado' });
@@ -162,23 +156,23 @@ exports.olvidePassword = async (req, res) => {
 
 exports.comprobarToken = async (req, res) => {
     const { token } = req.body;
-    const email = req.body.email.trim().toLowerCase();
+    const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
     try {
         const usuario = await User.findOne({ email });
-        if (!usuario || String(usuario.token) !== String(token)) return res.status(400).json({ msg: 'Incorrecto' });
+        if (!usuario || String(usuario.token).trim() !== String(token).trim()) return res.status(400).json({ msg: 'Código incorrecto' });
         res.json({ msg: 'Correcto' });
     } catch (error) { res.status(500).send('Error'); }
 };
 
 exports.nuevoPassword = async (req, res) => {
     const { token, password } = req.body;
-    const email = req.body.email.trim().toLowerCase();
+    const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
 
     if(password.length < 6) return res.status(400).json({ msg: 'Mínimo 6 caracteres' });
 
     try {
         const usuario = await User.findOne({ email });
-        if (!usuario || String(usuario.token) !== String(token)) return res.status(400).json({ msg: 'Error' });
+        if (!usuario || String(usuario.token).trim() !== String(token).trim()) return res.status(400).json({ msg: 'Error' });
 
         const salt = await bcrypt.genSalt(10);
         usuario.password = await bcrypt.hash(password, salt);
@@ -200,9 +194,9 @@ exports.actualizarPerfil = async (req, res) => {
         if(genero) u.genero = genero;
         if(preferencia) u.preferencia = preferencia;
         if(galeria) u.galeria = galeria;
-
+        
         await u.save();
-        res.json({ msg: 'Actualizado', usuario: u });
+        res.json({msg:'Ok', usuario: u});
     } catch (error) { res.status(500).send('Error'); }
 };
 
