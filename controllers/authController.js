@@ -28,19 +28,74 @@ exports.registrar = async (req, res) => {
 
     try {
         let usuario = await User.findOne({ email });
-        if (usuario) {
+        
+        if (usuario && usuario.cuentaConfirmada) {
             return res.status(400).json({ msg: 'El usuario ya existe' });
         }
 
-        usuario = new User(req.body);
         const salt = await bcrypt.genSalt(10);
-        usuario.password = await bcrypt.hash(password, salt);
+        const hashedPassword = await bcrypt.hash(password, salt);
+        const codigo = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+        if (usuario && !usuario.cuentaConfirmada) {
+            usuario.nombre = nombre;
+            usuario.password = hashedPassword;
+            usuario.imagen = imagen;
+            usuario.token = codigo;
+        } else {
+            usuario = new User({
+                nombre,
+                email,
+                password: hashedPassword,
+                imagen,
+                token: codigo,
+                cuentaConfirmada: false 
+            });
+        }
+
         await usuario.save();
 
-        res.json({ msg: 'Usuario creado correctamente' });
+        if (transporter) {
+            await transporter.sendMail({
+                to: email,
+                from: process.env.EMAIL_SENDER,
+                subject: 'Verifica tu cuenta - AmigosApp',
+                html: `
+                    <h1>¡Bienvenido, ${nombre}!</h1>
+                    <p>Tu código de verificación es:</p>
+                    <h2 style="color: #6C63FF;">${codigo}</h2>
+                `
+            });
+        }
+
+        res.json({ msg: 'Código enviado. Verifica tu correo.' });
     } catch (error) {
         console.log(error);
-        res.status(500).send('Hubo un error');
+        res.status(500).send('Hubo un error al registrar');
+    }
+};
+
+exports.verificarCuenta = async (req, res) => {
+    const { email, codigo } = req.body;
+
+    try {
+        const usuario = await User.findOne({ email });
+        
+        if (!usuario) {
+            return res.status(400).json({ msg: 'Usuario no encontrado' });
+        }
+
+        if (usuario.token !== codigo.trim().toUpperCase()) {
+            return res.status(400).json({ msg: 'Código incorrecto' });
+        }
+
+        usuario.token = null;
+        usuario.cuentaConfirmada = true;
+        await usuario.save();
+
+        res.json({ msg: 'Cuenta verificada exitosamente' });
+    } catch (error) {
+        res.status(500).send('Error al verificar');
     }
 };
 
@@ -50,6 +105,10 @@ exports.login = async (req, res) => {
         let usuario = await User.findOne({ email });
         if (!usuario) {
             return res.status(400).json({ msg: 'Credenciales inválidas' });
+        }
+
+        if (!usuario.cuentaConfirmada) {
+            return res.status(400).json({ msg: 'Debes verificar tu cuenta primero' });
         }
 
         const passCorrecto = await bcrypt.compare(password, usuario.password);
@@ -72,7 +131,6 @@ exports.login = async (req, res) => {
             }
         });
     } catch (error) {
-        console.log(error);
         res.status(500).send('Hubo un error');
     }
 };
@@ -100,7 +158,6 @@ exports.olvidePassword = async (req, res) => {
         res.json({ msg: mensajeFeedback });
 
     } catch (error) {
-        console.log(error);
         res.status(500).send('Error al enviar correo');
     }
 };
@@ -177,7 +234,6 @@ exports.actualizarPerfil = async (req, res) => {
         });
 
     } catch (error) {
-        console.log(error);
         res.status(500).send('Error al actualizar');
     }
 };
@@ -187,7 +243,6 @@ exports.eliminarCuenta = async (req, res) => {
         await User.findByIdAndDelete(req.usuario._id);
         res.json({ msg: 'Cuenta eliminada correctamente' });
     } catch (error) {
-        console.log(error);
         res.status(500).send('Error al eliminar');
     }
 };
