@@ -23,7 +23,7 @@ exports.registrar = async (req, res) => {
     if(!imagen) return res.status(400).json({ msg: 'La foto de perfil es obligatoria' });
 
     try {
-        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
+        const codigo = Math.floor(100000 + Math.random() * 900000).toString().replace(/[^0-9]/g, '');
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
         const usuarioExistente = await User.findOne({ email, cuentaConfirmada: true });
@@ -73,7 +73,7 @@ exports.verificarCuenta = async (req, res) => {
             return res.status(400).json({ msg: 'Usuario no encontrado' });
         }
 
-        const tokenBD = String(usuario.token || '').trim().substring(0, 6);
+        const tokenBD = String(usuario.token || '').trim();
         const tokenUser = String(codigo || '').replace(/\s/g, '').trim();
 
         console.log(`DEBUG FINAL: Longitud BD: ${tokenBD.length}, Longitud User: ${tokenUser.length}`);
