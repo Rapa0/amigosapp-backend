@@ -35,6 +35,7 @@ exports.registrar = async (req, res) => {
 
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
+
         const codigo = Math.random().toString(36).substring(2, 8).toUpperCase();
 
         if (usuario && !usuario.cuentaConfirmada) {
@@ -54,6 +55,7 @@ exports.registrar = async (req, res) => {
         }
 
         await usuario.save();
+        console.log(`>> REGISTRO: Código generado para ${email}: ${codigo}`);
 
         if (transporter) {
             await transporter.sendMail({
@@ -85,12 +87,17 @@ exports.verificarCuenta = async (req, res) => {
             return res.status(400).json({ msg: 'Usuario no encontrado' });
         }
 
-        console.log(`Verificando: ${email}`);
-        console.log(`Código en BD: [${usuario.token}]`);
-        console.log(`Código Recibido: [${codigo.trim().toUpperCase()}]`);
+        console.log('----------------------------------------');
+        console.log(`INTENTO DE VERIFICACIÓN: ${email}`);
+        console.log(`CODIGO RECIBIDO (APP): ${codigo}`);
+        console.log(`CODIGO ESPERADO (BD):  ${usuario.token}`);
+        console.log('----------------------------------------');
 
-        if (usuario.token !== codigo.trim().toUpperCase()) {
-            return res.status(400).json({ msg: 'Código incorrecto' });
+        const codigoLimpio = codigo.trim().toUpperCase();
+        const tokenBD = usuario.token ? usuario.token.trim().toUpperCase() : '';
+
+        if (tokenBD !== codigoLimpio) {
+            return res.status(400).json({ msg: `Código incorrecto. (Tú pusiste: ${codigoLimpio})` });
         }
 
         usuario.token = null;
