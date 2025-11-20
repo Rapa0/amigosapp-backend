@@ -19,59 +19,46 @@ exports.registrar = async (req, res) => {
     const { password, nombre, imagen } = req.body;
     const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
     
-    if(password.length < 6) {
-        return res.status(400).json({ msg: 'La contraseña debe tener al menos 6 caracteres' });
-    }
-
-    if(!imagen) {
-        return res.status(400).json({ msg: 'La foto de perfil es obligatoria' });
-    }
+    if(password.length < 6) return res.status(400).json({ msg: 'La contraseña debe tener al menos 6 caracteres' });
+    if(!imagen) return res.status(400).json({ msg: 'La foto de perfil es obligatoria' });
 
     try {
-        let usuario = await User.findOne({ email });
-        
-        if (usuario && usuario.cuentaConfirmada) {
+        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+        const usuarioExistente = await User.findOne({ email, cuentaConfirmada: true });
+        if (usuarioExistente) {
             return res.status(400).json({ msg: 'El usuario ya existe' });
         }
 
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
-
-        if (usuario && !usuario.cuentaConfirmada) {
-            usuario.nombre = nombre;
-            usuario.password = hashedPassword;
-            usuario.imagen = imagen;
-            usuario.token = codigo;
-        } else {
-            usuario = new User({
+        await User.findOneAndUpdate(
+            { email: email },
+            {
                 nombre,
-                email,
                 password: hashedPassword,
                 imagen,
                 token: codigo,
-                cuentaConfirmada: false 
-            });
-        }
+                cuentaConfirmada: false
+            },
+            { new: true, upsert: true, setDefaultsOnInsert: true }
+        );
 
-        await usuario.save();
+        console.log(`>> CODIGO GENERADO para ${email}: [${codigo}]`);
 
         if (transporter) {
             await transporter.sendMail({
                 to: email,
                 from: process.env.EMAIL_SENDER,
-                subject: 'Verifica tu cuenta - AmigosApp',
-                html: `
-                    <h1>¡Bienvenido, ${nombre}!</h1>
-                    <p>Tu código de verificación es:</p>
-                    <h2 style="color: #6C63FF;">${codigo}</h2>
-                `
+                subject: 'Código de Verificación',
+                html: `<h1>${codigo}</h1>`
             });
         }
 
-        res.json({ msg: 'Código enviado. Verifica tu correo.' });
+        res.json({ msg: 'Código enviado' });
+
     } catch (error) {
-        res.status(500).send('Hubo un error al registrar');
+        console.log(error);
+        res.status(500).send('Error en registro');
     }
 };
 
@@ -86,16 +73,23 @@ exports.verificarCuenta = async (req, res) => {
             return res.status(400).json({ msg: 'Usuario no encontrado' });
         }
 
-        if (String(usuario.token).trim() !== String(codigo).trim()) {
-            return res.status(400).json({ msg: 'Código incorrecto' });
+        const codigoBD = String(usuario.token).trim();
+        
+        const codigoUser = String(codigo).replace(/\s/g, '').trim();
+
+        console.log(`COMPARANDO: BD[${codigoBD}] vs USER[${codigoUser}]`);
+
+        if (codigoBD !== codigoUser) {
+            return res.status(400).json({ msg: `Incorrecto. BD: ${codigoBD} / Tú: ${codigoUser}` });
         }
 
         usuario.token = null;
         usuario.cuentaConfirmada = true;
         await usuario.save();
 
-        res.json({ msg: 'Cuenta verificada exitosamente' });
+        res.json({ msg: 'Cuenta verificada' });
     } catch (error) {
+        console.log(error);
         res.status(500).send('Error al verificar');
     }
 };
@@ -103,155 +97,77 @@ exports.verificarCuenta = async (req, res) => {
 exports.login = async (req, res) => {
     const { password } = req.body;
     const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
-
     try {
         let usuario = await User.findOne({ email });
-        if (!usuario) {
-            return res.status(400).json({ msg: 'Credenciales inválidas' });
-        }
-
-        if (!usuario.cuentaConfirmada) {
-            return res.status(400).json({ msg: 'Debes verificar tu cuenta primero' });
-        }
-
+        if (!usuario || !usuario.cuentaConfirmada) return res.status(400).json({ msg: 'Credenciales inválidas' });
         const passCorrecto = await bcrypt.compare(password, usuario.password);
-        if (!passCorrecto) {
-            return res.status(400).json({ msg: 'Credenciales inválidas' });
-        }
-
+        if (!passCorrecto) return res.status(400).json({ msg: 'Credenciales inválidas' });
         res.json({
             token: generarJWT(usuario._id),
             usuario: {
-                _id: usuario._id,
-                nombre: usuario.nombre,
-                email: usuario.email,
-                imagen: usuario.imagen,
-                galeria: usuario.galeria,
-                descripcion: usuario.descripcion,
-                edad: usuario.edad,
-                genero: usuario.genero,
-                preferencia: usuario.preferencia
+                _id: usuario._id, nombre: usuario.nombre, email: usuario.email, imagen: usuario.imagen,
+                galeria: usuario.galeria, descripcion: usuario.descripcion, edad: usuario.edad,
+                genero: usuario.genero, preferencia: usuario.preferencia
             }
         });
-    } catch (error) {
-        res.status(500).send('Hubo un error');
-    }
+    } catch (error) { res.status(500).send('Hubo un error'); }
 };
 
 exports.olvidePassword = async (req, res) => {
     const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
     try {
         const usuario = await User.findOne({ email });
-        const mensajeFeedback = 'Si existe el correo estará en tu bandeja de spam';
-
-        if (!usuario) return res.json({ msg: mensajeFeedback });
-
+        if (!usuario) return res.json({ msg: 'Enviado' });
         const codigo = Math.floor(100000 + Math.random() * 900000).toString();
-        usuario.token = codigo;
-        await usuario.save();
-
-        if (transporter) {
-            await transporter.sendMail({
-                to: email,
-                from: process.env.EMAIL_SENDER,
-                subject: 'Recuperar Contraseña - AmigosApp',
-                html: `<h1>Tu código es: <b>${codigo}</b></h1>`
-            });
-        }
-        res.json({ msg: mensajeFeedback });
-
-    } catch (error) {
-        res.status(500).send('Error al enviar correo');
-    }
+        usuario.token = codigo; await usuario.save();
+        if(transporter) await transporter.sendMail({to: email, from: process.env.EMAIL_SENDER, subject: 'Recuperar', html: `<h1>${codigo}</h1>`});
+        res.json({ msg: 'Enviado' });
+    } catch (error) { res.status(500).send('Error'); }
 };
 
 exports.comprobarToken = async (req, res) => {
     const { token } = req.body;
     const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
-
     try {
-        const usuario = await User.findOne({ email });
-        if (!usuario) return res.status(400).json({ msg: 'Usuario no encontrado' });
-
-        if (String(usuario.token).trim() !== String(token).trim()) {
-            return res.status(400).json({ msg: 'Código incorrecto' });
-        }
-        res.json({ msg: 'Código válido' });
-    } catch (error) {
-        res.status(500).send('Error');
-    }
+        const u = await User.findOne({ email });
+        if (!u || String(u.token).trim() !== String(token).trim()) return res.status(400).json({ msg: 'Incorrecto' });
+        res.json({ msg: 'Correcto' });
+    } catch (error) { res.status(500).send('Error'); }
 };
 
 exports.nuevoPassword = async (req, res) => {
     const { token, password } = req.body;
     const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
-
-    if(password.length < 6) {
-        return res.status(400).json({ msg: 'La contraseña debe tener al menos 6 caracteres' });
-    }
-
+    if(password.length < 6) return res.status(400).json({ msg: 'Mínimo 6 caracteres' });
     try {
-        const usuario = await User.findOne({ email });
-        if (!usuario) return res.status(400).json({ msg: 'Operación no válida' });
-        
-        if (String(usuario.token).trim() !== String(token).trim()) {
-            return res.status(400).json({ msg: 'Token inválido' });
-        }
-
-        const salt = await bcrypt.genSalt(10);
-        usuario.password = await bcrypt.hash(password, salt);
-        usuario.token = null;
-        await usuario.save();
-
-        res.json({ msg: 'Contraseña modificada correctamente' });
-    } catch (error) {
-        res.status(500).send('Error');
-    }
+        const u = await User.findOne({ email });
+        if (!u || String(u.token).trim() !== String(token).trim()) return res.status(400).json({ msg: 'Error' });
+        const s = await bcrypt.genSalt(10);
+        u.password = await bcrypt.hash(password, s);
+        u.token = null; await u.save();
+        res.json({ msg: 'Password cambiado' });
+    } catch (error) { res.status(500).send('Error'); }
 };
 
 exports.actualizarPerfil = async (req, res) => {
     try {
-        const { nombre, descripcion, edad, genero, preferencia, galeria } = req.body;
-        
-        const usuario = await User.findById(req.usuario._id);
-        if (!usuario) return res.status(404).json({ msg: 'Usuario no encontrado' });
-
-        if (nombre) usuario.nombre = nombre;
-        if (descripcion) usuario.descripcion = descripcion;
-        if (edad) usuario.edad = edad;
-        if (genero) usuario.genero = genero;
-        if (preferencia) usuario.preferencia = preferencia;
-        if (galeria) usuario.galeria = galeria;
-
-        await usuario.save();
-
-        res.json({ 
-            msg: 'Perfil actualizado', 
-            usuario: {
-                _id: usuario._id,
-                nombre: usuario.nombre,
-                email: usuario.email,
-                imagen: usuario.imagen,
-                galeria: usuario.galeria,
-                descripcion: usuario.descripcion,
-                edad: usuario.edad,
-                genero: usuario.genero,
-                preferencia: usuario.preferencia
-            }
-        });
-
-    } catch (error) {
-        res.status(500).send('Error al actualizar');
-    }
+        const u = await User.findById(req.usuario._id);
+        if(!u) return res.status(404).json({msg:'No user'});
+        const {nombre,descripcion,edad,genero,preferencia,galeria}=req.body;
+        if(nombre) u.nombre = nombre;
+        if(descripcion) u.descripcion = descripcion;
+        if(edad) u.edad = edad;
+        if(genero) u.genero = genero;
+        if(preferencia) u.preferencia = preferencia;
+        if(galeria) u.galeria = galeria;
+        await u.save();
+        res.json({ msg: 'Actualizado', usuario: u });
+    } catch (error) { res.status(500).send('Error'); }
 };
 
 exports.eliminarCuenta = async (req, res) => {
-    try {
-        await User.findByIdAndDelete(req.usuario._id);
-        res.json({ msg: 'Cuenta eliminada correctamente' });
-    } catch (error) {
-        res.status(500).send('Error al eliminar');
-    }
+    try { await User.findByIdAndDelete(req.usuario._id); res.json({msg:'Borrado'}); }
+    catch (error) { res.status(500).send('Error'); }
 };
 
 exports.usuarioAutenticado = async (req, res, next) => {
@@ -262,11 +178,7 @@ exports.usuarioAutenticado = async (req, res, next) => {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
             req.usuario = await User.findById(decoded.id).select('-password');
             return next();
-        } catch (error) {
-            return res.status(404).json({ msg: 'Token no válido' });
-        }
+        } catch (error) { return res.status(404).json({ msg: 'Token no válido' }); }
     }
-    if (!token) {
-        return res.status(401).json({ msg: 'No autenticado' });
-    }
+    if (!token) return res.status(401).json({ msg: 'No autenticado' });
 };
