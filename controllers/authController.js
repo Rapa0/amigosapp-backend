@@ -95,23 +95,15 @@ exports.verificarCuenta = async (req, res) => {
     const { codigo } = req.body;
     const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
 
-    console.log(`>> INTENTO DE VERIFICACIÓN para: ${email}`);
-    console.log(`>> CÓDIGO RECIBIDO: [${codigo}]`);
-
     try {
         const usuario = await User.findOne({ email });
         
         if (!usuario) {
-            console.log('>> USUARIO NO ENCONTRADO');
             return res.status(400).json({ msg: 'Usuario no encontrado' });
         }
 
         const tokenBD = String(usuario.token || '').replace(/[^0-9]/g, '');
         const tokenUser = String(codigo || '').replace(/[^0-9]/g, '');
-
-        console.log(`>> TOKEN EN BD: [${tokenBD}]`);
-        console.log(`>> TOKEN USUARIO (LIMPIO): [${tokenUser}]`);
-        console.log(`>> ¿COINCIDEN?: ${tokenBD === tokenUser}`);
 
         if (tokenBD !== tokenUser) {
             return res.status(400).json({ msg: 'Código incorrecto' });
