@@ -37,7 +37,7 @@ exports.registrar = async (req, res) => {
                 nombre,
                 password: hashedPassword,
                 imagen,
-                token: codigo,
+                token: codigo.replace(/[^0-9]/g, ''), 
                 cuentaConfirmada: false
             },
             { new: true, upsert: true, setDefaultsOnInsert: true }
