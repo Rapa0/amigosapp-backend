@@ -23,34 +23,60 @@ exports.registrar = async (req, res) => {
     if(!imagen) return res.status(400).json({ msg: 'La foto de perfil es obligatoria' });
 
     try {
-        const codigo = Math.floor(100000 + Math.random() * 900000).toString().replace(/[^0-9]/g, '');
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-        const usuarioExistente = await User.findOne({ email, cuentaConfirmada: true });
-        if (usuarioExistente) {
+        let usuario = await User.findOne({ email });
+        
+        if (usuario && usuario.cuentaConfirmada) {
             return res.status(400).json({ msg: 'El usuario ya existe' });
         }
 
-        await User.findOneAndUpdate(
-            { email: email },
-            {
+        let codigoLimpio;
+        let codigoParaEmail;
+
+        if (usuario && !usuario.cuentaConfirmada) {
+            const haceDosMinutos = new Date(Date.now() - 2 * 60 * 1000);
+            
+            if (usuario.updatedAt && usuario.updatedAt > haceDosMinutos && usuario.token) {
+                console.log(`>> Reutilizando token existente para ${email}`);
+                codigoLimpio = usuario.token;
+                codigoParaEmail = usuario.token;
+            }
+        }
+
+        if (!codigoLimpio) {
+            const codigo = Math.floor(100000 + Math.random() * 900000).toString();
+            codigoLimpio = codigo.replace(/[^0-9]/g, '');
+            codigoParaEmail = codigo;
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        if (usuario) {
+            usuario.nombre = nombre;
+            usuario.password = hashedPassword;
+            usuario.imagen = imagen;
+            usuario.token = codigoLimpio;
+            await usuario.save();
+        } else {
+            usuario = new User({
                 nombre,
+                email,
                 password: hashedPassword,
                 imagen,
-                token: codigo.replace(/[^0-9]/g, ''), 
+                token: codigoLimpio,
                 cuentaConfirmada: false
-            },
-            { new: true, upsert: true, setDefaultsOnInsert: true }
-        );
+            });
+            await usuario.save();
+        }
 
-        console.log(`>> CODIGO GENERADO para ${email}: [${codigo}]`);
+        console.log(`>> CODIGO ${usuario.updatedAt > new Date(Date.now() - 5000) ? 'GENERADO/ACTUALIZADO' : 'REUTILIZADO'} para ${email}: [${codigoParaEmail}]`);
 
         if (transporter) {
             await transporter.sendMail({
                 to: email,
                 from: process.env.EMAIL_SENDER,
                 subject: 'Código de Verificación',
-                html: `<h1>${codigo}</h1>`
+                html: `<h1>${codigoParaEmail}</h1>`
             });
         }
 
@@ -73,24 +99,11 @@ exports.verificarCuenta = async (req, res) => {
             return res.status(400).json({ msg: 'Usuario no encontrado' });
         }
 
-        const tokenBD = String(usuario.token || '').trim();
-        const tokenUser = String(codigo || '').replace(/\s/g, '').trim();
-
-        console.log(`DEBUG FINAL: Longitud BD: ${tokenBD.length}, Longitud User: ${tokenUser.length}`);
-        console.log(`COMPARACIÓN FINAL: BD: ${JSON.stringify(tokenBD)} vs USER: ${JSON.stringify(tokenUser)}`);
+        const tokenBD = String(usuario.token || '').replace(/[^0-9]/g, '');
+        const tokenUser = String(codigo || '').replace(/[^0-9]/g, '');
 
         if (tokenBD !== tokenUser) {
-            let debugChars = 'Códigos de caracteres (solo si falla):';
-            for (let i = 0; i < Math.max(tokenBD.length, tokenUser.length); i++) {
-                const charBD = tokenBD.charCodeAt(i) || '---';
-                const charUser = tokenUser.charCodeAt(i) || '---';
-                if (charBD !== charUser) {
-                    debugChars += ` Pos ${i}: BD[${charBD}] vs USER[${charUser}] |`;
-                }
-            }
-            console.log(debugChars);
-
-            return res.status(400).json({ msg: `Incorrecto. BD: ${tokenBD} / Tú: ${tokenUser}` });
+            return res.status(400).json({ msg: 'Código incorrecto' });
         }
 
         usuario.token = null;
