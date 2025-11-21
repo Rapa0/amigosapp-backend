@@ -8,6 +8,8 @@ router.post('/login', authController.login);
 router.post('/olvide-password', authController.olvidePassword);
 router.post('/comprobar-token', authController.comprobarToken);
 router.post('/nuevo-password', authController.nuevoPassword);
+router.post('/verificar', authController.verificarCuenta);
+router.post('/verificar-cuenta', authController.verificarCuenta);
 router.put('/perfil', auth, authController.actualizarPerfil);
 router.delete('/perfil', auth, authController.eliminarCuenta);
 
