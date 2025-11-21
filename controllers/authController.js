@@ -32,7 +32,9 @@ exports.registrar = async (req, res) => {
         let codigoLimpio;
         let codigoParaEmail;
 
+        // Si el usuario existe pero NO está confirmado
         if (usuario && !usuario.cuentaConfirmada) {
+            // Verificar si el token se generó hace poco (ej. 2 minutos) para reutilizarlo
             const haceDosMinutos = new Date(Date.now() - 2 * 60 * 1000);
             
             if (usuario.updatedAt && usuario.updatedAt > haceDosMinutos && usuario.token) {
@@ -42,6 +44,7 @@ exports.registrar = async (req, res) => {
             }
         }
 
+        // Si no se reutilizó
         if (!codigoLimpio) {
             const codigo = Math.floor(100000 + Math.random() * 900000).toString();
             codigoLimpio = codigo.replace(/[^0-9]/g, '');
@@ -92,15 +95,23 @@ exports.verificarCuenta = async (req, res) => {
     const { codigo } = req.body;
     const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
 
+    console.log(`>> INTENTO DE VERIFICACIÓN para: ${email}`);
+    console.log(`>> CÓDIGO RECIBIDO: [${codigo}]`);
+
     try {
         const usuario = await User.findOne({ email });
         
         if (!usuario) {
+            console.log('>> USUARIO NO ENCONTRADO');
             return res.status(400).json({ msg: 'Usuario no encontrado' });
         }
 
         const tokenBD = String(usuario.token || '').replace(/[^0-9]/g, '');
         const tokenUser = String(codigo || '').replace(/[^0-9]/g, '');
+
+        console.log(`>> TOKEN EN BD: [${tokenBD}]`);
+        console.log(`>> TOKEN USUARIO (LIMPIO): [${tokenUser}]`);
+        console.log(`>> ¿COINCIDEN?: ${tokenBD === tokenUser}`);
 
         if (tokenBD !== tokenUser) {
             return res.status(400).json({ msg: 'Código incorrecto' });
