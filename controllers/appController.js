@@ -12,7 +12,10 @@ exports.obtenerCandidatos = async (req, res) => {
             ...(usuarioActual.likes || [])
         ];
 
-        let filtro = { _id: { $nin: excluidos } };
+        let filtro = { 
+            _id: { $nin: excluidos },
+            cuentaConfirmada: true
+        };
 
         if (usuarioActual.preferencia && usuarioActual.preferencia !== 'Ambos') {
             filtro.genero = usuarioActual.preferencia; 
